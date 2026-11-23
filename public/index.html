@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FireWatch IA</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="styles.css">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+<!-- ───────── Ingreso / registro ───────── -->
+<main id="auth" class="auth">
+  <div class="auth-card">
+    <div class="brand">🔥 FireWatch IA</div>
+    <p class="auth-sub">Monitoreo de incendios con satélites e inteligencia artificial</p>
+
+    <div class="tabs" role="tablist">
+      <button type="button" id="tabLogin" class="on" role="tab">Ingresar</button>
+      <button type="button" id="tabRegister" role="tab">Crear cuenta</button>
+    </div>
+
+    <div id="googleBtn" class="google-btn"></div>
+    <p id="googleNote" class="note" hidden>El ingreso con Google todavía no está activado (falta GOOGLE_CLIENT_ID en el .env).</p>
+    <div class="or"><span>o con tu email</span></div>
+
+    <form id="authForm" novalidate>
+      <label id="nameRow" hidden>Nombre
+        <input id="fName" type="text" autocomplete="name" maxlength="60" placeholder="Tu nombre">
+      </label>
+      <label>Email
+        <input id="fEmail" type="email" autocomplete="email" maxlength="120" placeholder="tu@email.com" required>
+      </label>
+      <label>Contraseña
+        <input id="fPass" type="password" autocomplete="current-password" maxlength="100" placeholder="Mínimo 8 caracteres" required>
+      </label>
+      <p id="authError" class="auth-error" role="alert" hidden></p>
+      <button id="authSubmit" class="primary" type="submit">Ingresar</button>
+    </form>
+  </div>
+</main>
+
+<!-- ───────── Aplicación ───────── -->
+<div id="app">
+  <header class="topbar">
+    <div class="topbar-brand">🔥 <span>FireWatch IA</span></div>
+    <nav class="nav">
+      <button data-view="map" class="on">🗺️ <span>Mapa</span></button>
+      <button data-view="info">📖 <span>Información de incendios</span></button>
+    </nav>
+    <div class="user">
+      <img id="avatar" alt="" hidden referrerpolicy="no-referrer">
+      <span id="userName"></span>
+      <button id="logout">Salir</button>
+    </div>
+  </header>
+
+  <!-- Vista: mapa -->
+  <div id="map"></div>
+  <div id="badge" class="badge hidden"></div>
+
+  <div id="compareBar" class="compare-bar hidden">
+    <span id="cmpBefore"></span>
+    <input id="cmpSlider" type="range" min="0" max="100" value="100" aria-label="Antes / después">
+    <span id="cmpAfter"></span>
+    <button id="cmpClose" aria-label="Cerrar comparación">✕</button>
+  </div>
+
+  <aside class="panel" id="panel">
+    <header>
+      <div><b>Asistente IA</b><small id="status">conectando…</small></div>
+      <button id="toggle" aria-label="Minimizar">–</button>
+    </header>
+
+    <div id="messages" class="messages">
+      <div class="msg ai">Hola. Preguntame lo que quieras sobre incendios: buscá una zona, mirá focos reales de las últimas horas, compará fechas o pedime recomendaciones. Los puntos rojos del mapa son focos de calor de NASA: movelo y se actualizan solos.</div>
+    </div>
+
+    <div class="chips">
+      <button data-p="Llevame a una zona donde haya focos de calor activos ahora">🔥 Focos activos</button>
+      <button data-p="Mostrame los focos de calor de los últimos 2 días en ">📍 Ubicación</button>
+      <button data-p="Compará imágenes satelitales y focos de calor antes y después de un incendio en ">🔀 Comparar</button>
+      <button data-p="Dame estadísticas de los focos de calor de la última semana en ">📊 Estadísticas</button>
+      <button data-p="Dame recomendaciones de prevención de incendios para ">🌲 Prevención</button>
+      <button data-p="Simulá cómo está el riesgo de incendio con el clima actual en ">🧪 Simulador</button>
+    </div>
+
+    <form id="form">
+      <textarea id="input" rows="1" placeholder="Escribí tu consulta (podés decir “acá” para usar el mapa)" required></textarea>
+      <button aria-label="Enviar">↑</button>
+    </form>
+  </aside>
+
+  <!-- Vista: información -->
+  <section id="viewInfo" class="info">
+    <div class="info-wrap">
+      <h1>Información sobre incendios</h1>
+      <p class="lead">Cómo se producen, qué hace que crezcan y, sobre todo, cómo evitarlos. Casi todos se pueden prevenir.</p>
+
+      <h2>🔥 ¿Cómo se produce un incendio?</h2>
+      <p>Para que haya fuego hacen falta tres cosas juntas. Es lo que se llama el <b>triángulo del fuego</b>:</p>
+      <div class="triangle">
+        <div class="tri-card"><span>🔆</span><b>Calor</b><small>una chispa, una llama, un rayo o una superficie muy caliente</small></div>
+        <div class="tri-card"><span>🌿</span><b>Combustible</b><small>pasto seco, hojas, ramas, árboles, leña o hasta una vivienda</small></div>
+        <div class="tri-card"><span>💨</span><b>Oxígeno</b><small>el aire que respiramos; hay de sobra al aire libre</small></div>
+      </div>
+      <p>Si falta uno de los tres, el fuego no empieza o se apaga. En el monte el combustible y el oxígeno casi siempre están presentes, así que <b>lo que más se puede evitar es la fuente de calor</b>: es decir, el origen del fuego.</p>
+
+      <h2>¿Quién los provoca?</h2>
+      <div class="grid2">
+        <div class="card">
+          <h3>👤 Causas humanas</h3>
+          <p>Son la causa de la gran mayoría de los incendios forestales. Casi siempre por descuido, aunque a veces son intencionales.</p>
+          <ul>
+            <li>Fogatas mal apagadas o encendidas donde no se puede</li>
+            <li>Colillas de cigarrillo tiradas al suelo o desde un auto</li>
+            <li>Quema de pastos, basura o residuos que se sale de control</li>
+            <li>Chispas de maquinaria, vehículos o líneas eléctricas</li>
+            <li>Pirotecnia y globos de fuego</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>⛈️ Causas naturales</h3>
+          <p>Son una parte menor, pero existen.</p>
+          <ul>
+            <li>Rayos, sobre todo en tormentas secas, con poca lluvia</li>
+            <li>Erupciones volcánicas</li>
+          </ul>
+          <p class="small">Aun cuando el origen es natural, que el fuego se haga grande depende de las condiciones del terreno y del clima.</p>
+        </div>
+      </div>
+
+      <h2>🌡️ ¿Qué hace que un incendio crezca?</h2>
+      <div class="chips-row">
+        <span>Sequía y falta de lluvia</span><span>Temperaturas altas</span><span>Aire muy seco</span>
+        <span>Viento fuerte</span><span>Vegetación seca acumulada</span><span>Pendientes (el fuego sube más rápido cuesta arriba)</span>
+      </div>
+      <p>Cuando varias de estas condiciones se juntan, un fuego chico puede volverse incontrolable en minutos. Por eso en épocas secas y ventosas hay que extremar los cuidados.</p>
+
+      <h2>🛡️ Cómo evitarlos</h2>
+      <div class="grid2">
+        <div class="card">
+          <h3>⛺ En paseos y camping</h3>
+          <ul>
+            <li>Hacé fuego solo en lugares habilitados</li>
+            <li>Apagalo del todo con agua y tierra, hasta que esté frío al tacto</li>
+            <li>Nunca dejes una fogata sola</li>
+            <li>No tires colillas ni fósforos; llevate la basura</li>
+            <li>Respetá las prohibiciones y las alertas de riesgo</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>🌾 En el campo</h3>
+          <ul>
+            <li>No quemes pastos ni residuos sin autorización</li>
+            <li>Hacé cortafuegos y mantené el pasto bajo cerca de galpones</li>
+            <li>Revisá la maquinaria: una chispa alcanza</li>
+            <li>Las quemas controladas, solo con permiso y supervisión</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>🏡 En tu casa, cerca del monte</h3>
+          <ul>
+            <li>Limpiá hojas secas y ramas de techos, canaletas y alrededores</li>
+            <li>Mantené el césped corto y podá cerca de techos y cables</li>
+            <li>Guardá leña y garrafas lejos de la vivienda</li>
+            <li>Armá un plan de evacuación con tu familia</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>🚗 En la ruta y en la ciudad</h3>
+          <ul>
+            <li>No tires colillas desde el auto</li>
+            <li>No estaciones sobre pasto seco: el caño de escape quema</li>
+            <li>No uses pirotecnia ni globos de fuego</li>
+            <li>Mantené limpios los terrenos baldíos</li>
+          </ul>
+        </div>
+      </div>
+
+      <h2>🚨 Si ves fuego o humo</h2>
+      <ol class="steps">
+        <li><b>Alejate y ponete a salvo.</b> No intentes apagar un fuego grande.</li>
+        <li><b>Llamá a emergencias</b> y contá dónde estás, qué ves (humo, llamas) y hacia dónde va el viento.</li>
+        <li><b>Seguí las indicaciones de las autoridades</b> y evacuá si te lo piden.</li>
+        <li><b>No vuelvas</b> a buscar cosas hasta que sea seguro.</li>
+      </ol>
+      <div class="card phones">
+        <b>Números de emergencia</b>
+        <span>Argentina: Bomberos 100 · Emergencias 911</span>
+        <span>Chile: Bomberos 132</span>
+        <span>México: 911</span>
+        <span>España: 112</span>
+        <small>En otros países, buscá el número de bomberos de tu zona. Verificá siempre el número vigente.</small>
+      </div>
+
+      <h2>🤖 Preguntale a la IA</h2>
+      <p>Tocá una opción y te llevo al mapa con la pregunta lista para enviar:</p>
+      <div class="ask-row">
+        <button data-ask="Explicame cómo se produce un incendio forestal y cómo evitarlo">¿Cómo se produce y cómo se evita?</button>
+        <button data-ask="Dame recomendaciones de prevención de incendios para ">Prevención en mi zona</button>
+        <button data-ask="Simulá cómo está el riesgo de incendio con el clima actual en ">Riesgo hoy en mi zona</button>
+        <button data-ask="¿Qué hago si veo humo o fuego cerca de mi casa?">¿Qué hago si veo humo?</button>
+      </div>
+
+      <p class="small foot">Información general y educativa. Ante una emergencia, seguí siempre las indicaciones de bomberos y defensa civil.</p>
+    </div>
+  </section>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

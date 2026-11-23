@@ -5,7 +5,8 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handleAuth, currentUser, sameOrigin, GOOGLE_CLIENT_ID } from './auth.js';
+import { handleAuth, currentUser, sameOrigin, GOOGLE_CLIENT_ID, logActivity } from './auth.js';
+import { initDatabase, hasPg } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -509,11 +510,11 @@ http
     try {
       if (await handleAuth(req, res)) return; // /api/config, /api/me, /api/auth/*
 
-      if (req.method === 'GET' && req.url === '/api/status') return send(res, 200, { ai: AI_READY, firms: !!FIRMS_KEY, firms_check: firmsCheck, provider: PROVIDER, model: MODEL, google: !!GOOGLE_CLIENT_ID });
+      if (req.method === 'GET' && req.url === '/api/status') return send(res, 200, { ai: AI_READY, firms: !!FIRMS_KEY, firms_check: firmsCheck, provider: PROVIDER, model: MODEL, google: !!GOOGLE_CLIENT_ID, postgres: hasPg() });
 
       // Focos que se dibujan en el mapa al desplazarlo (sin IA: es solo la capa de datos)
       if (req.method === 'GET' && req.url.startsWith('/api/hotspots')) {
-        const user = currentUser(req);
+        const user = await currentUser(req);
         if (!user) return send(res, 401, { error: 'Iniciá sesión para ver los focos.' });
         if (liveLimited(user.id)) return send(res, 429, { error: 'Demasiadas consultas al mapa, esperá un momento.' });
         const q = Object.fromEntries(new URL(req.url, 'http://x').searchParams);
@@ -526,7 +527,7 @@ http
       }
 
       if (req.method === 'POST' && req.url === '/api/chat') {
-        const user = currentUser(req);
+        const user = await currentUser(req);
         if (!user) return send(res, 401, { error: 'Iniciá sesión para usar el asistente.' });
         if (!sameOrigin(req)) return send(res, 403, { error: 'Origen no permitido.' });
         if (!AI_READY) return send(res, 503, { error: 'Falta la clave de IA en el servidor: completá GROQ_API_KEY en el archivo .env.' });
@@ -535,6 +536,7 @@ http
         for await (const c of req) { raw += c; if (raw.length > 100000) return send(res, 413, { error: 'Mensaje muy largo.' }); }
         const { messages, map } = JSON.parse(raw || '{}');
         if (!Array.isArray(messages) || !messages.length) return send(res, 400, { error: 'Sin mensajes.' });
+        await logActivity(user.email, 'chat_query', messages.at(-1)?.content || 'Consulta en chat');
         return send(res, 200, await runAgent(messages, map));
       }
 
@@ -546,4 +548,14 @@ http
       send(res, e.code === 'ENOENT' ? 404 : 500, { error: e.code === 'ENOENT' ? 'No encontrado' : e.message });
     }
   })
-  .listen(PORT, () => { checkFirms(); if (!GOOGLE_CLIENT_ID) console.log('Aviso: falta GOOGLE_CLIENT_ID; el botón de Google no va a funcionar (ver README).'); console.log(`FireWatch IA en http://localhost:${PORT}  (IA: ${AI_READY ? PROVIDER + ' / ' + MODEL : 'FALTA clave'} · FIRMS: ${FIRMS_KEY ? 'clave cargada' : 'FALTA clave'})`); });
+  .listen(PORT, async () => {
+    try {
+      const dbOk = await initDatabase();
+      console.log('PostgreSQL:', dbOk ? 'conectado y tablas listas' : 'sin DATABASE_URL (modo archivos locales)');
+    } catch (e) {
+      console.log('PostgreSQL ERROR:', e.message);
+    }
+    checkFirms();
+    if (!GOOGLE_CLIENT_ID) console.log('Aviso: falta GOOGLE_CLIENT_ID; el botón de Google no va a funcionar (ver README).');
+    console.log(`FireWatch IA en http://localhost:${PORT}  (IA: ${AI_READY ? PROVIDER + ' / ' + MODEL : 'FALTA clave'} · FIRMS: ${FIRMS_KEY ? 'clave cargada' : 'FALTA clave'})`);
+  });
